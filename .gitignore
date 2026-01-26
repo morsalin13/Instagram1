@@ -1,0 +1,5 @@
+session-*
+last_user.txt
+__pycache__/
+*.pyc
+.env
