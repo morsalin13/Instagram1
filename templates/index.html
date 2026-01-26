@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Username Checker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        h2 {
+            font-size: 1.2em;
+            margin-bottom: 10px;
+            color: #555;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #0095f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #0081d6;
+        }
+        button:disabled {
+            background-color: #ccc;
+        }
+        .login-section {
+            background-color: #fff9c4;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #eee;
+        }
+        .logged-in-msg {
+            background-color: #d1e7dd;
+            color: #0f5132;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        #results {
+            margin-top: 20px;
+        }
+        .result-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+        }
+        .status-taken {
+            color: #ed4956;
+            font-weight: bold;
+        }
+        .status-available {
+            color: #26c72d;
+            font-weight: bold;
+        }
+        .status-error {
+            color: #ffa500;
+        }
+        .status-uncertain {
+            color: #666;
+            font-style: italic;
+        }
+        .stats {
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #666;
+            text-align: right;
+        }
+        .method-tag {
+            font-size: 0.8em;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background-color: #eee;
+            color: #666;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Instagram Username Checker</h1>
+        
+        {% if logged_in %}
+            <div class="logged-in-msg">✅ Connected to Instagram Account (Deep Scan Enabled)</div>
+        {% else %}
+            <div class="login-section" id="loginSection">
+                <h2>Connect Instagram Account (Optional but Recommended)</h2>
+                <p><small>Logging in enables "Deep Scan" if the fast check is uncertain.</small></p>
+                <input type="text" id="igUsername" placeholder="Instagram Username">
+                <input type="password" id="igPassword" placeholder="Instagram Password">
+                <button id="loginBtn" onclick="login()">Connect Account</button>
+                <p id="loginStatus" style="margin-top: 10px;"></p>
+            </div>
+        {% endif %}
+
+        <h2>Check Usernames</h2>
+        <p>Enter usernames (one per line):</p>
+        <textarea id="usernamesInput" placeholder="username1&#10;username2&#10;username3"></textarea>
+        <button id="checkBtn" onclick="checkUsernames()">Check Availability</button>
+        
+        <div id="results"></div>
+    </div>
+
+    <script>
+        async function login() {
+            const username = document.getElementById('igUsername').value;
+            const password = document.getElementById('igPassword').value;
+            const btn = document.getElementById('loginBtn');
+            const status = document.getElementById('loginStatus');
+
+            if (!username || !password) {
+                status.innerHTML = '<span style="color:red">Please enter username and password</span>';
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = 'Connecting...';
+            status.innerHTML = '';
+
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    status.innerHTML = '<span style="color:green">Connected successfully! reloading...</span>';
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    status.innerHTML = `<span style="color:red">Error: ${data.message}</span>`;
+                    btn.disabled = false;
+                    btn.innerText = 'Connect Account';
+                }
+            } catch (e) {
+                status.innerHTML = `<span style="color:red">Error: ${e.message}</span>`;
+                btn.disabled = false;
+                btn.innerText = 'Connect Account';
+            }
+        }
+
+        async function checkUsernames() {
+            const input = document.getElementById('usernamesInput').value;
+            const usernames = input.split('\n').map(u => u.trim()).filter(u => u);
+            
+            if (usernames.length === 0) {
+                alert('Please enter at least one username');
+                return;
+            }
+
+            const btn = document.getElementById('checkBtn');
+            const resultsDiv = document.getElementById('results');
+            
+            btn.disabled = true;
+            btn.innerText = 'Checking... (This may take a moment)';
+            resultsDiv.innerHTML = '<p>Processing... Please wait.</p>';
+
+            try {
+                const response = await fetch('/check', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ usernames: usernames })
+                });
+                
+                const data = await response.json();
+                
+                let html = '<h3>Results:</h3>';
+                let availableCount = 0;
+                let takenCount = 0;
+
+                data.forEach(item => {
+                    let statusClass = '';
+                    if (item.status === 'Taken') {
+                        statusClass = 'status-taken';
+                        takenCount++;
+                    } else if (item.status === 'Available') {
+                        statusClass = 'status-available';
+                        availableCount++;
+                    } else if (item.status === 'Uncertain') {
+                        statusClass = 'status-uncertain';
+                    } else {
+                        statusClass = 'status-error';
+                    }
+                    
+                    html += `
+                        <div class="result-item">
+                            <div>
+                                <div style="font-weight:bold; font-size:1.2em; margin-bottom: 5px;">${item.username}</div>
+                                ${item.followers !== undefined ? `
+                                <div style="color: #000; font-weight: 600; font-size: 1.1em; background-color: #e8f0fe; display: inline-block; padding: 2px 8px; border-radius: 4px; margin-bottom: 4px;">
+                                    Followers: ${item.followers}
+                                </div>
+                                <div style="font-size: 0.9em; color: #555;">
+                                    UID: ${item.uid} <span style="margin: 0 5px; color: #ccc;">|</span> Status: <span style="color: green;">${item.account_status}</span>
+                                </div>` : ''}
+                            </div>
+                            <div style="text-align:right;">
+                                <span class="${statusClass}">${item.status}</span>
+                                <br>
+                                <small style="display:block; margin:2px 0;">(${item.details})</small>
+                                <span class="method-tag">${item.method || 'Unknown'}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                    <div class="stats">
+                        Total: ${data.length} | Available: ${availableCount} | Taken: ${takenCount}
+                    </div>
+                `;
+
+                resultsDiv.innerHTML = html;
+
+            } catch (error) {
+                resultsDiv.innerHTML = `<p style="color:red">Error: ${error.message}</p>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Check Availability';
+            }
+        }
+    </script>
+</body>
+</html>
