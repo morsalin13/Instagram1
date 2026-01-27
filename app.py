@@ -1,47 +1,46 @@
 from flask import Flask, render_template, request, jsonify
 import instaloader
+import requests
 import time
 import random
-import os
+import os   # 🔥 এই লাইনটাই missing ছিল (সব সমস্যা এখান থেকে)
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 
+# ---------------- CONFIG ----------------
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X)",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0)"
+]
+
 # ---------------- INSTALOADER ----------------
 L = instaloader.Instaloader()
 L.context.max_connection_attempts = 1
-LOGGED_IN = False
 
-# ---------------- LOGIN FUNCTION (SAFE) ----------------
-def login_instagram():
-    global LOGGED_IN
-    if LOGGED_IN:
-        return
+# 🔥 SERVER INSTAGRAM LOGIN (Railway ENV variables)
+IG_USER = os.getenv("IG_USERNAME")
+IG_PASS = os.getenv("IG_PASSWORD")
 
-    IG_USER = os.getenv("IG_USERNAME")
-    IG_PASS = os.getenv("IG_PASSWORD")
-
-    if not IG_USER or not IG_PASS:
-        print("⚠️ IG credentials missing")
-        return
-
+if IG_USER and IG_PASS:
     try:
         L.login(IG_USER, IG_PASS)
-        LOGGED_IN = True
         print("✅ Instagram server account logged in")
     except Exception as e:
         print("❌ Instagram login failed:", e)
+else:
+    print("⚠️ IG_USERNAME / IG_PASSWORD not found in ENV")
 
 # ---------------- ROUTES ----------------
 @app.route("/")
 def index():
-    return render_template("index.html", logged_in=True)
+    return render_template("index.html")
 
 @app.route("/check", methods=["POST"])
 def check_usernames():
-    login_instagram()  # 🔥 login only when needed
-
-    usernames = request.json.get("usernames", [])
+    data = request.get_json()
+    usernames = data.get("usernames", [])
     results = []
 
     for username in usernames:
@@ -93,6 +92,3 @@ def check_instaloader(username):
             "details": err,
             "method": "Instaloader"
         }
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
