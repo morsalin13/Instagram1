@@ -2,81 +2,60 @@ from flask import Flask, render_template, request, jsonify
 import instaloader
 import requests
 import time
-import os
 import random
+import os
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 
-# ---------- CONFIG ----------
-SESSION_FILE_PREFIX = "session-"
-LAST_USER_FILE = "last_user.txt"
-is_logged_in = False
-
+# ---------------- CONFIG ----------------
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17 Safari/605.1.15",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
 ]
 
-# ---------- INSTALOADER ----------
+# ---------------- INSTALOADER ----------------
 L = instaloader.Instaloader()
 L.context.max_connection_attempts = 1
+is_logged_in = False
 
+SESSION_FILE = "session-server"
 
-def load_saved_session():
-    global is_logged_in, L
-    if os.path.exists(LAST_USER_FILE):
-        try:
-            with open(LAST_USER_FILE, "r") as f:
-                username = f.read().strip()
+def load_server_session():
+    global is_logged_in
+    try:
+        if os.path.exists(SESSION_FILE):
+            L.load_session_from_file(
+                os.environ.get("IG_USERNAME"),
+                filename=SESSION_FILE
+            )
+            is_logged_in = True
+    except:
+        is_logged_in = False
 
-            session_file = f"{SESSION_FILE_PREFIX}{username}"
-            if username and os.path.exists(session_file):
-                L.load_session_from_file(username, filename=session_file)
-                is_logged_in = True
-        except:
-            is_logged_in = False
+# login once using ENV (Railway Variables)
+def login_with_env():
+    global is_logged_in
+    try:
+        ig_user = os.environ.get("IG_USERNAME")
+        ig_pass = os.environ.get("IG_PASSWORD")
 
+        if ig_user and ig_pass:
+            L.login(ig_user, ig_pass)
+            L.save_session_to_file(filename=SESSION_FILE)
+            is_logged_in = True
+    except:
+        is_logged_in = False
 
-load_saved_session()
+load_server_session()
+if not is_logged_in:
+    login_with_env()
 
-# ---------- ROUTES ----------
+# ---------------- ROUTES ----------------
 @app.route("/")
 def index():
     return render_template("index.html", logged_in=is_logged_in)
-
-
-@app.route("/login", methods=["POST"])
-def login():
-    global is_logged_in, L
-
-    data = request.get_json()
-    username = data.get("username")
-    password = data.get("password")
-
-    if not username or not password:
-        return jsonify({"success": False, "message": "Username & password required"})
-
-    try:
-        new_L = instaloader.Instaloader()
-        new_L.context.max_connection_attempts = 1
-        new_L.login(username, password)
-
-        session_file = f"{SESSION_FILE_PREFIX}{username}"
-        new_L.save_session_to_file(filename=session_file)
-
-        with open(LAST_USER_FILE, "w") as f:
-            f.write(username)
-
-        L = new_L
-        is_logged_in = True
-        return jsonify({"success": True})
-
-    except Exception as e:
-        is_logged_in = False
-        return jsonify({"success": False, "message": str(e)})
-
 
 @app.route("/check", methods=["POST"])
 def check_usernames():
@@ -88,20 +67,19 @@ def check_usernames():
         if not username:
             continue
 
-        result = check_fast(username)
+        fast = check_fast(username)
 
-        if is_logged_in and result["status"] in ["Taken", "Uncertain", "Error"]:
+        if fast["status"] == "Taken" and is_logged_in:
             deep = check_instaloader(username)
-            if deep["status"] != "Error":
-                result = deep
+            results.append(deep)
+        else:
+            results.append(fast)
 
-        results.append(result)
-        time.sleep(random.uniform(0.8, 1.5))
+        time.sleep(random.uniform(1.0, 2.0))
 
     return jsonify(results)
 
-
-# ---------- CHECK METHODS ----------
+# ---------------- FAST CHECK ----------------
 def check_fast(username):
     url = f"https://www.instagram.com/{username}/"
     headers = {
@@ -110,22 +88,48 @@ def check_fast(username):
     }
 
     try:
-        r = requests.get(url, headers=headers, timeout=5)
+        r = requests.get(url, headers=headers, timeout=6, allow_redirects=True)
 
         if r.status_code == 404:
-            return {"username": username, "status": "Available", "method": "Fast"}
+            return {
+                "username": username,
+                "status": "Available",
+                "details": "not created yet",
+                "method": "Fast"
+            }
 
-        if r.status_code == 200:
-            if "Sorry, this page isn't available." in r.text:
-                return {"username": username, "status": "Available", "method": "Fast"}
-            return {"username": username, "status": "Taken", "method": "Fast"}
+        if "Sorry, this page isn't available." in r.text:
+            return {
+                "username": username,
+                "status": "Available",
+                "details": "not created yet",
+                "method": "Fast"
+            }
 
-        return {"username": username, "status": "Uncertain", "method": "Fast"}
+        if '"profilePage_' in r.text or '"username":"' in r.text:
+            return {
+                "username": username,
+                "status": "Taken",
+                "details": "account exists",
+                "method": "Fast"
+            }
+
+        return {
+            "username": username,
+            "status": "Available",
+            "details": "not created yet",
+            "method": "Fast"
+        }
 
     except Exception as e:
-        return {"username": username, "status": "Error", "details": str(e), "method": "Fast"}
+        return {
+            "username": username,
+            "status": "Error",
+            "details": str(e),
+            "method": "Fast"
+        }
 
-
+# ---------------- INSTALOADER DEEP CHECK ----------------
 def check_instaloader(username):
     try:
         profile = instaloader.Profile.from_username(L.context, username)
@@ -135,20 +139,24 @@ def check_instaloader(username):
             "status": "Taken",
             "uid": profile.userid,
             "followers": profile.followers,
-            "following": profile.followees,   # ✅ NEW
+            "following": profile.followees,
+            "posts": profile.mediacount,
             "account_status": "Live",
-            "method": "Instaloader",
+            "method": "Instaloader"
         }
 
     except instaloader.ProfileNotExistsException:
-        return {"username": username, "status": "Available", "method": "Instaloader"}
-
-    except instaloader.LoginRequiredException:
-        return {"username": username, "status": "Error", "details": "Login required"}
+        return {
+            "username": username,
+            "status": "Available",
+            "details": "not created yet",
+            "method": "Instaloader"
+        }
 
     except Exception as e:
-        err = str(e)
-        if "401" in err or "JSON Query" in err:
-            return {"username": username, "status": "Available", "method": "Instaloader"}
-
-        return {"username": username, "status": "Error", "details": err, "method": "Instaloader"}
+        return {
+            "username": username,
+            "status": "Error",
+            "details": str(e),
+            "method": "Instaloader"
+        }
