@@ -25,7 +25,7 @@
         }
         textarea {
             width: 100%;
-            height: 150px;
+            height: 160px;
             padding: 10px;
             border-radius: 6px;
             border: 1px solid #ccc;
@@ -62,6 +62,7 @@
         }
         .status-taken { color: #ed4956; font-weight: bold; }
         .status-available { color: #26c72d; font-weight: bold; }
+        .status-error { color: #ff9800; font-weight: bold; }
         .method-tag {
             font-size: 12px;
             background: #eee;
@@ -121,6 +122,12 @@ async function checkUsernames() {
             body: JSON.stringify({ usernames })
         });
 
+        /* 🔥 THIS FIX PREVENTS "< is not valid JSON" ERROR */
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error("Server error: " + text.slice(0, 150));
+        }
+
         const data = await res.json();
 
         let html = "<h3>Results:</h3>";
@@ -129,7 +136,8 @@ async function checkUsernames() {
         data.forEach(item => {
             const statusClass =
                 item.status === "Taken" ? "status-taken" :
-                item.status === "Available" ? "status-available" : "";
+                item.status === "Available" ? "status-available" :
+                "status-error";
 
             if (item.status === "Taken") taken++;
             if (item.status === "Available") available++;
@@ -147,22 +155,27 @@ async function checkUsernames() {
                     <div style="font-size:13px;color:#555">
                         UID: ${item.uid} | Status: ${item.account_status}
                     </div>
-                    ` : `<div style="font-size:13px;color:#999">No profile data</div>`}
+                    ` : `<div style="font-size:13px;color:#999">
+                        ${item.details || "No profile data"}
+                    </div>`}
                 </div>
 
                 <div style="text-align:right">
                     <span class="${statusClass}">${item.status}</span><br>
-                    <span class="method-tag">${item.method || "Fast"}</span>
+                    <span class="method-tag">${item.method || "Instaloader"}</span>
                 </div>
             </div>
             `;
         });
 
-        html += `<div class="stats">Total: ${data.length} | Available: ${available} | Taken: ${taken}</div>`;
+        html += `<div class="stats">
+            Total: ${data.length} | Available: ${available} | Taken: ${taken}
+        </div>`;
+
         results.innerHTML = html;
 
     } catch (err) {
-        results.innerHTML = `<p style="color:red">Error: ${err.message}</p>`;
+        results.innerHTML = `<p style="color:red">❌ ${err.message}</p>`;
     } finally {
         btn.disabled = false;
         btn.innerText = "Check Availability";
