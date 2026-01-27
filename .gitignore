@@ -1,0 +1,10 @@
+# Instagram checker sensitive files
+last_user.txt
+session-*
+
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.pyc
