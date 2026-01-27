@@ -1,33 +1,36 @@
 from flask import Flask, render_template, request, jsonify
 import instaloader
-import requests
 import time
 import random
+import os
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 
-# ---------------- CONFIG ----------------
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X)",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0)"
-]
-
 # ---------------- INSTALOADER ----------------
 L = instaloader.Instaloader()
 L.context.max_connection_attempts = 1
+LOGGED_IN = False
 
-# 🔥 SERVER ACCOUNT LOGIN (from ENV)
-IG_USER = os.getenv("IG_USERNAME")
-IG_PASS = os.getenv("IG_PASSWORD")
+# ---------------- LOGIN FUNCTION (SAFE) ----------------
+def login_instagram():
+    global LOGGED_IN
+    if LOGGED_IN:
+        return
 
-if IG_USER and IG_PASS:
+    IG_USER = os.getenv("IG_USERNAME")
+    IG_PASS = os.getenv("IG_PASSWORD")
+
+    if not IG_USER or not IG_PASS:
+        print("⚠️ IG credentials missing")
+        return
+
     try:
         L.login(IG_USER, IG_PASS)
+        LOGGED_IN = True
         print("✅ Instagram server account logged in")
     except Exception as e:
-        print("❌ Login failed:", e)
+        print("❌ Instagram login failed:", e)
 
 # ---------------- ROUTES ----------------
 @app.route("/")
@@ -36,6 +39,8 @@ def index():
 
 @app.route("/check", methods=["POST"])
 def check_usernames():
+    login_instagram()  # 🔥 login only when needed
+
     usernames = request.json.get("usernames", [])
     results = []
 
@@ -46,7 +51,7 @@ def check_usernames():
 
         result = check_instaloader(username)
         results.append(result)
-        time.sleep(random.uniform(1.5, 2.5))
+        time.sleep(random.uniform(1.2, 2.0))
 
     return jsonify(results)
 
@@ -90,4 +95,4 @@ def check_instaloader(username):
         }
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=5000)
