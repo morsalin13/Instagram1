@@ -99,7 +99,7 @@
 
     <p><b>Enter usernames (one per line):</b></p>
 
-    <textarea id="usernamesInput" placeholder="instagram&#10;cristiano&#10;futureusername123"></textarea>
+    <textarea id="usernamesInput" placeholder="instagram&#10;cristiano&#10;future_username"></textarea>
 
     <button id="checkBtn" onclick="checkUsernames()">Check Availability</button>
 
@@ -111,9 +111,10 @@
 async function checkUsernames() {
     const input = document.getElementById("usernamesInput").value;
     const usernames = input.split("\n").map(u => u.trim()).filter(Boolean);
-    const errorBox = document.getElementById("errorBox");
+
     const btn = document.getElementById("checkBtn");
     const results = document.getElementById("results");
+    const errorBox = document.getElementById("errorBox");
 
     if (!usernames.length) {
         alert("Please enter at least one username");
@@ -135,13 +136,12 @@ async function checkUsernames() {
 
         const response = await res.json();
 
-        if (!res.ok || response.success !== true) {
-            throw new Error(response.error || "Server error");
+        if (!res.ok || response.success !== true || !Array.isArray(response.data)) {
+            throw new Error(response.error || "Invalid server response");
         }
 
         let html = "<h3>Results:</h3>";
-        let taken = 0;
-        let available = 0;
+        let taken = 0, available = 0;
 
         response.data.forEach(item => {
             let statusText = "Error";
@@ -164,8 +164,8 @@ async function checkUsernames() {
 
                     ${item.exists === true ? `
                         <div style="margin-top:6px;background:#e8f0fe;padding:6px;border-radius:4px">
-                            👥 Followers: ${item.followers} |
-                            ➕ Following: ${item.following}
+                            👥 Followers: ${item.followers ?? "-"} |
+                            ➕ Following: ${item.following ?? "-"}
                         </div>
                         <div style="font-size:13px;color:#555">
                             Private: ${item.private} | Verified: ${item.verified}
@@ -179,7 +179,7 @@ async function checkUsernames() {
 
                 <div style="text-align:right">
                     <span class="${statusClass}">${statusText}</span><br>
-                    <span class="method-tag">${item.method || "public-scraping"}</span>
+                    <span class="method-tag">${item.method || "public-api"}</span>
                 </div>
             </div>
             `;
