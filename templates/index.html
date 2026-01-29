@@ -77,6 +77,14 @@
             color: #666;
             text-align: right;
         }
+        .error-box {
+            background-color: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 10px;
+            display: none;
+        }
     </style>
 </head>
 
@@ -94,7 +102,8 @@
     <textarea id="usernamesInput" placeholder="instagram&#10;cristiano&#10;futureusername123"></textarea>
 
     <button id="checkBtn" onclick="checkUsernames()">Check Availability</button>
-
+    
+    <div id="errorBox" class="error-box"></div>
     <div id="results"></div>
 </div>
 
@@ -102,6 +111,7 @@
 async function checkUsernames() {
     const input = document.getElementById("usernamesInput").value;
     const usernames = input.split("\n").map(u => u.trim()).filter(Boolean);
+    const errorBox = document.getElementById("errorBox");
 
     if (!usernames.length) {
         alert("Please enter at least one username");
@@ -114,6 +124,8 @@ async function checkUsernames() {
     btn.disabled = true;
     btn.innerText = "Checking...";
     results.innerHTML = "<p>Checking usernames…</p>";
+    errorBox.style.display = "none";
+    errorBox.innerText = "";
 
     try {
         const res = await fetch("/check", {
@@ -122,13 +134,20 @@ async function checkUsernames() {
             body: JSON.stringify({ usernames })
         });
 
-        /* 🔥 THIS FIX PREVENTS "< is not valid JSON" ERROR */
-        if (!res.ok) {
+        const contentType = res.headers.get("content-type");
+        let data;
+
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            data = await res.json();
+        } else {
+            // Server returned non-JSON (likely HTML error page)
             const text = await res.text();
-            throw new Error("Server error: " + text.slice(0, 150));
+            throw new Error(`Server returned non-JSON response: ${text.substring(0, 100)}...`);
         }
 
-        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.details || data.error || "Unknown server error");
+        }
 
         let html = "<h3>Results:</h3>";
         let taken = 0, available = 0;
@@ -175,7 +194,10 @@ async function checkUsernames() {
         results.innerHTML = html;
 
     } catch (err) {
-        results.innerHTML = `<p style="color:red">❌ ${err.message}</p>`;
+        console.error(err);
+        results.innerHTML = "";
+        errorBox.style.display = "block";
+        errorBox.innerText = `❌ Error: ${err.message}`;
     } finally {
         btn.disabled = false;
         btn.innerText = "Check Availability";
