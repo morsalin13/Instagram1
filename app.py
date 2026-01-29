@@ -1,4 +1,3 @@
-import os
 import time
 import random
 import logging
@@ -8,60 +7,43 @@ import instaloader
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
-# TRAP_HTTP_EXCEPTIONS ensures that all HTTP errors (including 500s) are handled by the custom error handler
-app.config['TRAP_HTTP_EXCEPTIONS'] = True
+app.config["TRAP_HTTP_EXCEPTIONS"] = True
 
-# Configure logging
+# ---------------- LOGGING ----------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ---------------- CONFIG ----------------
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X)",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0)"
-]
+# ---------------- INSTALOADER (NO LOGIN) ----------------
+L = instaloader.Instaloader(
+    download_pictures=False,
+    download_videos=False,
+    download_video_thumbnails=False,
+    download_geotags=False,
+    save_metadata=False,
+    compress_json=False,
+)
 
-# ---------------- INSTALOADER ----------------
-L = instaloader.Instaloader()
+# IMPORTANT: no login, no session
 L.context.max_connection_attempts = 1
+logger.info("ℹ️ Instaloader initialized (NO LOGIN mode)")
 
-# IG LOGIN (Railway ENV variables)
-IG_USER = os.getenv("IG_USERNAME")
-IG_PASS = os.getenv("IG_PASSWORD")
-
-if IG_USER and IG_PASS:
-    try:
-        L.login(IG_USER, IG_PASS)
-        logger.info("✅ Instagram server account logged in")
-    except Exception as e:
-        logger.error(f"❌ Instagram login failed: {e}")
-else:
-    logger.warning("⚠️ IG_USERNAME / IG_PASSWORD not found in ENV")
-
-# ---------------- ERROR HANDLERS ----------------
+# ---------------- ERROR HANDLER ----------------
 @app.errorhandler(Exception)
 def handle_exception(e):
-    # Log the full error
     logger.error(f"Unhandled Exception: {e}", exc_info=True)
-    
-    # Return JSON for all API requests
-    # Check if request accepts JSON or is an API route
-    if request.path.startswith("/check") or request.path.startswith("/health") or request.is_json:
-        if isinstance(e, HTTPException):
-            return jsonify({
-                "error": e.name,
-                "details": e.description,
-                "code": e.code
-            }), e.code
-            
+
+    if isinstance(e, HTTPException):
         return jsonify({
-            "error": "Internal Server Error",
-            "details": str(e)
-        }), 500
-        
-    # Default to original handling for non-API routes (e.g. 404 on a page)
-    return e
+            "success": False,
+            "error": e.name,
+            "details": e.description
+        }), e.code
+
+    return jsonify({
+        "success": False,
+        "error": "Internal Server Error",
+        "details": str(e)
+    }), 500
 
 # ---------------- ROUTES ----------------
 @app.route("/")
@@ -74,82 +56,75 @@ def health():
 
 @app.route("/check", methods=["POST"])
 def check_usernames():
+    if not request.is_json:
+        return jsonify({
+            "success": False,
+            "error": "Invalid Content-Type",
+            "details": "Request must be JSON"
+        }), 400
+
+    data = request.get_json(silent=True)
+    if not data or "usernames" not in data:
+        return jsonify({
+            "success": False,
+            "error": "Missing usernames",
+            "details": "Expected { usernames: [] }"
+        }), 400
+
+    usernames = data.get("usernames")
+    if not isinstance(usernames, list):
+        return jsonify({
+            "success": False,
+            "error": "Invalid format",
+            "details": "'usernames' must be a list"
+        }), 400
+
+    results = []
+    for username in usernames:
+        username = str(username).strip()
+        if not username:
+            continue
+
+        results.append(check_instagram_public(username))
+        time.sleep(random.uniform(0.8, 1.5))  # soft delay
+
+    return jsonify({
+        "success": True,
+        "data": results
+    })
+
+# ---------------- CORE LOGIC (NO LOGIN) ----------------
+def check_instagram_public(username):
     try:
-        if not request.is_json:
-            # Try to force parse if possible, or fail
-            return jsonify({"error": "Invalid Content-Type", "details": "Request body must be JSON"}), 400
-        
-        data = request.get_json(silent=True) # silent=True returns None instead of crashing
-        if data is None:
-             return jsonify({"error": "Invalid JSON", "details": "Could not parse JSON body"}), 400
-
-        if "usernames" not in data:
-             return jsonify({"error": "Missing 'usernames' field", "details": "Please provide a list of usernames"}), 400
-             
-        usernames = data.get("usernames")
-        if not isinstance(usernames, list):
-            return jsonify({"error": "Invalid format", "details": "'usernames' must be a list"}), 400
-
-        results = []
-        for username in usernames:
-            username = str(username).strip()
-            if not username:
-                continue
-
-            result = check_instaloader(username)
-            results.append(result)
-            time.sleep(random.uniform(1.2, 2.0))
-
-        return jsonify(results)
-
-    except Exception as e:
-        logger.error(f"Error in /check: {e}", exc_info=True)
-        return jsonify({"error": "Processing Error", "details": str(e)}), 500
-
-# ---------------- CORE CHECK ----------------
-def check_instaloader(username):
-    try:
-        # Check if L is valid
-        if not L:
-             raise Exception("Instaloader instance not initialized")
-
         profile = instaloader.Profile.from_username(L.context, username)
+
         return {
             "username": username,
-            "status": "Taken",
-            "account_status": "Live",
+            "exists": True,
             "uid": profile.userid,
             "followers": profile.followers,
             "following": profile.followees,
-            "method": "Instaloader"
+            "private": profile.is_private,
+            "verified": profile.is_verified,
+            "method": "instaloader-public"
         }
 
     except instaloader.ProfileNotExistsException:
         return {
             "username": username,
-            "status": "Available",
-            "details": "This account is not created yet",
-            "method": "Instaloader"
+            "exists": False,
+            "details": "Username not found",
+            "method": "instaloader-public"
         }
 
     except Exception as e:
-        err = str(e)
-        # Handle specific Instaloader errors if needed, or generic ones
-        if "401" in err or "404" in err or "JSON Query" in err:
-             return {
-                "username": username,
-                "status": "Available",
-                "details": "This account is not created yet (inferred from error)",
-                "method": "Instaloader"
-            }
-        
         return {
             "username": username,
-            "status": "Error",
-            "details": err,
-            "method": "Instaloader"
+            "exists": None,
+            "error": str(e),
+            "method": "instaloader-public"
         }
 
+# ---------------- RUN ----------------
 if __name__ == "__main__":
-    # DISABLE DEBUG MODE to prevent HTML error pages
-    app.run(debug=False, port=5000)
+    app.run(host="0.0.0.0", port=8080)
