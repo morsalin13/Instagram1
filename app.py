@@ -3,10 +3,13 @@ import time
 import random
 import logging
 from flask import Flask, render_template, request, jsonify
+from werkzeug.exceptions import HTTPException
 import instaloader
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+# TRAP_HTTP_EXCEPTIONS ensures that all HTTP errors (including 500s) are handled by the custom error handler
+app.config['TRAP_HTTP_EXCEPTIONS'] = True
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,26 +40,28 @@ else:
     logger.warning("⚠️ IG_USERNAME / IG_PASSWORD not found in ENV")
 
 # ---------------- ERROR HANDLERS ----------------
-@app.errorhandler(400)
-def bad_request(error):
-    return jsonify({"error": "Bad Request", "details": str(error)}), 400
-
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({"error": "Not Found", "details": str(error)}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({"error": "Internal Server Error", "details": str(error)}), 500
-
 @app.errorhandler(Exception)
 def handle_exception(e):
-    # Pass through HTTP errors
-    if hasattr(e, "code"):
-        return jsonify({"error": str(e), "details": str(e)}), e.code
-    # Handle non-HTTP exceptions
-    logger.error(f"Unhandled Exception: {e}")
-    return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
+    # Log the full error
+    logger.error(f"Unhandled Exception: {e}", exc_info=True)
+    
+    # Return JSON for all API requests
+    # Check if request accepts JSON or is an API route
+    if request.path.startswith("/check") or request.path.startswith("/health") or request.is_json:
+        if isinstance(e, HTTPException):
+            return jsonify({
+                "error": e.name,
+                "details": e.description,
+                "code": e.code
+            }), e.code
+            
+        return jsonify({
+            "error": "Internal Server Error",
+            "details": str(e)
+        }), 500
+        
+    # Default to original handling for non-API routes (e.g. 404 on a page)
+    return e
 
 # ---------------- ROUTES ----------------
 @app.route("/")
@@ -71,10 +76,14 @@ def health():
 def check_usernames():
     try:
         if not request.is_json:
+            # Try to force parse if possible, or fail
             return jsonify({"error": "Invalid Content-Type", "details": "Request body must be JSON"}), 400
         
-        data = request.get_json()
-        if not data or "usernames" not in data:
+        data = request.get_json(silent=True) # silent=True returns None instead of crashing
+        if data is None:
+             return jsonify({"error": "Invalid JSON", "details": "Could not parse JSON body"}), 400
+
+        if "usernames" not in data:
              return jsonify({"error": "Missing 'usernames' field", "details": "Please provide a list of usernames"}), 400
              
         usernames = data.get("usernames")
@@ -94,12 +103,16 @@ def check_usernames():
         return jsonify(results)
 
     except Exception as e:
-        logger.error(f"Error in /check: {e}")
+        logger.error(f"Error in /check: {e}", exc_info=True)
         return jsonify({"error": "Processing Error", "details": str(e)}), 500
 
 # ---------------- CORE CHECK ----------------
 def check_instaloader(username):
     try:
+        # Check if L is valid
+        if not L:
+             raise Exception("Instaloader instance not initialized")
+
         profile = instaloader.Profile.from_username(L.context, username)
         return {
             "username": username,
@@ -138,4 +151,5 @@ def check_instaloader(username):
         }
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # DISABLE DEBUG MODE to prevent HTML error pages
+    app.run(debug=False, port=5000)
