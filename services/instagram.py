@@ -1,23 +1,23 @@
 import requests
-import re
-import json
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Accept-Language": "en-US,en;q=0.9"
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "*/*",
+    "X-IG-App-ID": "936619743392459"  # public web app id
 }
 
 def check_username(username: str):
-    url = f"https://www.instagram.com/{username}/"
+    url = "https://i.instagram.com/api/v1/users/web_profile_info/"
+    params = {"username": username}
 
     try:
-        r = requests.get(url, headers=HEADERS, timeout=10)
+        r = requests.get(url, headers=HEADERS, params=params, timeout=10)
 
         if r.status_code == 404:
             return {
                 "username": username,
                 "exists": False,
-                "method": "public-scraping"
+                "method": "web_profile_info"
             }
 
         if r.status_code != 200:
@@ -25,25 +25,19 @@ def check_username(username: str):
                 "username": username,
                 "exists": None,
                 "error": f"HTTP {r.status_code}",
-                "method": "public-scraping"
+                "method": "web_profile_info"
             }
 
-        # Extract shared data JSON
-        match = re.search(
-            r"window\._sharedData\s*=\s*(\{.*?\});",
-            r.text
-        )
+        data = r.json()
 
-        if not match:
+        if "data" not in data or "user" not in data["data"]:
             return {
                 "username": username,
-                "exists": None,
-                "error": "Profile data not found",
-                "method": "public-scraping"
+                "exists": False,
+                "method": "web_profile_info"
             }
 
-        data = json.loads(match.group(1))
-        user = data["entry_data"]["ProfilePage"][0]["graphql"]["user"]
+        user = data["data"]["user"]
 
         return {
             "username": username,
@@ -53,7 +47,7 @@ def check_username(username: str):
             "following": user["edge_follow"]["count"],
             "private": user["is_private"],
             "verified": user["is_verified"],
-            "method": "public-scraping"
+            "method": "web_profile_info"
         }
 
     except Exception as e:
@@ -61,5 +55,5 @@ def check_username(username: str):
             "username": username,
             "exists": None,
             "error": str(e),
-            "method": "public-scraping"
+            "method": "web_profile_info"
         }
