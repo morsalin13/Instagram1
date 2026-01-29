@@ -1,9 +1,11 @@
 import requests
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     "Accept": "*/*",
-    "X-IG-App-ID": "936619743392459"  # public web app id
+    "Accept-Language": "en-US,en;q=0.9",
+    "X-IG-App-ID": "936619743392459",
+    "Referer": "https://www.instagram.com/",
 }
 
 def check_username(username: str):
@@ -11,12 +13,21 @@ def check_username(username: str):
     params = {"username": username}
 
     try:
-        r = requests.get(url, headers=HEADERS, params=params, timeout=10)
+        r = requests.get(
+            url,
+            headers=HEADERS,
+            params=params,
+            timeout=10
+        )
 
         if r.status_code == 404:
             return {
                 "username": username,
                 "exists": False,
+                "followers": None,
+                "following": None,
+                "private": None,
+                "verified": None,
                 "method": "web_profile_info"
             }
 
@@ -24,6 +35,10 @@ def check_username(username: str):
             return {
                 "username": username,
                 "exists": None,
+                "followers": None,
+                "following": None,
+                "private": None,
+                "verified": None,
                 "error": f"HTTP {r.status_code}",
                 "method": "web_profile_info"
             }
@@ -34,6 +49,10 @@ def check_username(username: str):
             return {
                 "username": username,
                 "exists": False,
+                "followers": None,
+                "following": None,
+                "private": None,
+                "verified": None,
                 "method": "web_profile_info"
             }
 
@@ -42,11 +61,11 @@ def check_username(username: str):
         return {
             "username": username,
             "exists": True,
-            "uid": user["id"],
-            "followers": user["edge_followed_by"]["count"],
-            "following": user["edge_follow"]["count"],
-            "private": user["is_private"],
-            "verified": user["is_verified"],
+            "uid": user.get("id"),
+            "followers": user.get("edge_followed_by", {}).get("count"),
+            "following": user.get("edge_follow", {}).get("count"),
+            "private": user.get("is_private"),
+            "verified": user.get("is_verified"),
             "method": "web_profile_info"
         }
 
@@ -54,6 +73,10 @@ def check_username(username: str):
         return {
             "username": username,
             "exists": None,
-            "error": str(e),
+            "followers": None,
+            "following": None,
+            "private": None,
+            "verified": None,
+            "error": "Request failed",
             "method": "web_profile_info"
         }
