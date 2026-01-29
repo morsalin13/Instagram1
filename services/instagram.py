@@ -1,31 +1,23 @@
 import os
 import requests
-import random
 
 # ---------------- CONFIG ----------------
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 
 RAPIDAPI_HOST = "instagram-api-fast-reliable-data-scraper.p.rapidapi.com"
 
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 13; Pixel 6) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 Version/16.5 Mobile Safari/604.1",
-]
-
-# ---------------- HEADERS BUILDER ----------------
+# ---------------- HEADERS ----------------
 def build_headers():
     return {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
         "X-RapidAPI-Host": RAPIDAPI_HOST,
-        "User-Agent": random.choice(USER_AGENTS),
         "Accept": "application/json",
     }
 
 # ---------------- CORE FUNCTION ----------------
 def check_username(username: str):
     url = "https://instagram-api-fast-reliable-data-scraper.p.rapidapi.com/user_profile"
-    params = { "username": username }
+    params = {"username": username}
 
     try:
         r = requests.get(
@@ -35,6 +27,7 @@ def check_username(username: str):
             timeout=10
         )
 
+        # Explicit not found
         if r.status_code == 404:
             return {
                 "username": username,
@@ -42,6 +35,7 @@ def check_username(username: str):
                 "method": "rapidapi"
             }
 
+        # Any non-200 = API / rate / temp issue
         if r.status_code != 200:
             return {
                 "username": username,
@@ -52,10 +46,13 @@ def check_username(username: str):
 
         data = r.json()
 
-        if not data or "data" not in data:
+        # IMPORTANT FIX:
+        # data missing / null ≠ available
+        if not data or "data" not in data or data["data"] is None:
             return {
                 "username": username,
-                "exists": False,
+                "exists": None,
+                "error": "Profile data unavailable (rate limit or temporary block)",
                 "method": "rapidapi"
             }
 
