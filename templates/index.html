@@ -1,45 +1,211 @@
-let html = "<h3>Results:</h3>";
-let taken = 0, available = 0;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Username Checker</title>
 
-// ✅ IMPORTANT FIX HERE
-data.data.forEach(item => {
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        textarea {
+            width: 100%;
+            height: 160px;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            margin-bottom: 10px;
+            resize: vertical;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #0095f6;
+            color: #fff;
+            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #aaa;
+        }
+        .connected {
+            background: #d1e7dd;
+            color: #0f5132;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .status-taken { color: #ed4956; font-weight: bold; }
+        .status-available { color: #26c72d; font-weight: bold; }
+        .status-error { color: #ff9800; font-weight: bold; }
+        .method-tag {
+            font-size: 12px;
+            background: #eee;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 4px;
+        }
+        .stats {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+            text-align: right;
+        }
+        .error-box {
+            background-color: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+</head>
 
-    const statusText = item.exists === true
-        ? "Taken"
-        : item.exists === false
-        ? "Available"
-        : "Error";
+<body>
+<div class="container">
 
-    const statusClass =
-        statusText === "Taken" ? "status-taken" :
-        statusText === "Available" ? "status-available" :
-        "status-error";
+    <h1>Instagram Username Checker</h1>
 
-    if (statusText === "Taken") taken++;
-    if (statusText === "Available") available++;
-
-    html += `
-    <div class="result-item">
-        <div>
-            <div style="font-size:18px;font-weight:bold">${item.username}</div>
-
-            ${item.exists === true ? `
-            <div style="margin-top:6px;background:#e8f0fe;padding:6px;border-radius:4px">
-                👥 Followers: ${item.followers} |
-                ➕ Following: ${item.following}
-            </div>
-            <div style="font-size:13px;color:#555">
-                Private: ${item.private} | Verified: ${item.verified}
-            </div>
-            ` : `<div style="font-size:13px;color:#999">
-                Username is available
-            </div>`}
-        </div>
-
-        <div style="text-align:right">
-            <span class="${statusClass}">${statusText}</span><br>
-            <span class="method-tag">${item.method || "public-scraping"}</span>
-        </div>
+    <div class="connected">
+        ✅ Public Scan Enabled (No Login)
     </div>
-    `;
-});
+
+    <p><b>Enter usernames (one per line):</b></p>
+
+    <textarea id="usernamesInput" placeholder="instagram&#10;cristiano&#10;futureusername123"></textarea>
+
+    <button id="checkBtn" onclick="checkUsernames()">Check Availability</button>
+
+    <div id="errorBox" class="error-box"></div>
+    <div id="results"></div>
+</div>
+
+<script>
+async function checkUsernames() {
+    const input = document.getElementById("usernamesInput").value;
+    const usernames = input.split("\n").map(u => u.trim()).filter(Boolean);
+    const errorBox = document.getElementById("errorBox");
+    const btn = document.getElementById("checkBtn");
+    const results = document.getElementById("results");
+
+    if (!usernames.length) {
+        alert("Please enter at least one username");
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerText = "Checking...";
+    results.innerHTML = "<p>Checking usernames…</p>";
+    errorBox.style.display = "none";
+    errorBox.innerText = "";
+
+    try {
+        const res = await fetch("/check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ usernames })
+        });
+
+        const response = await res.json();
+
+        if (!res.ok || response.success !== true) {
+            throw new Error(response.error || "Server error");
+        }
+
+        let html = "<h3>Results:</h3>";
+        let taken = 0;
+        let available = 0;
+
+        response.data.forEach(item => {
+            let statusText = "Error";
+            let statusClass = "status-error";
+
+            if (item.exists === true) {
+                statusText = "Taken";
+                statusClass = "status-taken";
+                taken++;
+            } else if (item.exists === false) {
+                statusText = "Available";
+                statusClass = "status-available";
+                available++;
+            }
+
+            html += `
+            <div class="result-item">
+                <div>
+                    <div style="font-size:18px;font-weight:bold">${item.username}</div>
+
+                    ${item.exists === true ? `
+                        <div style="margin-top:6px;background:#e8f0fe;padding:6px;border-radius:4px">
+                            👥 Followers: ${item.followers} |
+                            ➕ Following: ${item.following}
+                        </div>
+                        <div style="font-size:13px;color:#555">
+                            Private: ${item.private} | Verified: ${item.verified}
+                        </div>
+                    ` : `
+                        <div style="font-size:13px;color:#999">
+                            Username is available
+                        </div>
+                    `}
+                </div>
+
+                <div style="text-align:right">
+                    <span class="${statusClass}">${statusText}</span><br>
+                    <span class="method-tag">${item.method || "public-scraping"}</span>
+                </div>
+            </div>
+            `;
+        });
+
+        html += `
+        <div class="stats">
+            Total: ${response.data.length} |
+            Available: ${available} |
+            Taken: ${taken}
+        </div>
+        `;
+
+        results.innerHTML = html;
+
+    } catch (err) {
+        console.error(err);
+        results.innerHTML = "";
+        errorBox.style.display = "block";
+        errorBox.innerText = "❌ Error: " + err.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerText = "Check Availability";
+    }
+}
+</script>
+
+</body>
+</html>
